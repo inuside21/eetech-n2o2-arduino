@@ -25,10 +25,10 @@ bool isWifiConnected = false;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // Temp
-#include "DHT.h"
-#define DHTPIN 14
-#define DHTTYPE DHT11
-DHT dht(DHTPIN, DHTTYPE);
+//#include "DHT.h"
+//#define DHTPIN 14
+//#define DHTTYPE DHT11
+//DHT dht(DHTPIN, DHTTYPE);
 String dTemp = "0";                               // Data Temp
 String dHumi = "0";                               // Data Humi
 String dHumiTrigger = "60";                       // >= 60 trigger solenoid
@@ -37,19 +37,28 @@ String dHumiOffset = "0";
 String dTriggered = "0";
 unsigned long dTotalOff = 0;                      // Internal tracking for total seconds turned off
 
+float tempSensorOxygen = 0;
+bool isSensorOxygenReading = false;
+
+// O2
+String dOxygen = "0";
+int oxygenPin = A0;
+
 // Input
-int button1 = D6;
+int button1 = D6;                                 // up
+int button2 = D5;                                 // down
 
 // Output
-int pinSolenoid = D7;
+int pinSolenoid = D7;                             // solenoid relay
+int pinOxygen = D8;                               // oxygen relay
 
 // Screen
 int currentScreen = 0;                            // 0 - main
-// 1 - set humi
+                                                  // 1 - set humi
 
 // Mode
 int localMode = 0;                                // 0 - offline
-// 1 -
+                                                  // 1 -
 
 // Debounce
 unsigned long timerfunction1 = 0;
@@ -57,11 +66,15 @@ unsigned long timerSerial = 0;
 unsigned long timerWifi = 0;
 unsigned long timerDelayDisplay = 0;
 unsigned long timerButton1 = 0;
+unsigned long timerSensorOxygen = 0;
+unsigned long timerSensorOxygenOff = 0;           
 
 unsigned long debouncer025 = 250;
 unsigned long debouncer05 = 500;
 unsigned long debouncer1 = 1000;
 unsigned long debouncer5 = 5000;
+unsigned long debouncer10 = 10000;
+unsigned long debouncer15 = 15000;
 unsigned long debouncer30 = 30000;
 unsigned long debouncer60 = 60000;
 
@@ -257,9 +270,11 @@ void setup()
 
   // Input
   pinMode(button1, INPUT_PULLUP);
+  pinMode(button2, INPUT_PULLUP);
 
   // Output
   pinMode(pinSolenoid, OUTPUT);
+  pinMode(pinOxygen, OUTPUT);
 
   //
   Serial.println("Type dcmd to view all commands");
@@ -274,8 +289,34 @@ void loop()
   //WiFiMulti.run();
 
   // Temp
-  float readTemp = dht.readTemperature();
-  float readHumi = dht.readHumidity();
+  float readTemp = 0; //dht.readTemperature();
+  float readHumi = 0; //dht.readHumidity();
+
+  // O2
+  unsigned long readOxygen = analogRead(A0); 
+  if (isSensorOxygenReading)
+  {
+    //
+    if (tempSensorOxygen < readOxygen)
+    {
+      tempSensorOxygen = readOxygen;
+    }
+
+    //float readOxygen = analogRead(A0); 
+    //readOxygen = readOxygen / 1023.0;
+    //Serial.println("read: " + String(readOxygen) + " tempo:" + String(tempSensorOxygen));
+  }
+  else
+  {
+    
+  }
+
+  lcd.setCursor(0, 0);
+  lcd.print(String(readOxygen));
+  lcd.setCursor(0, 1);
+  lcd.print(String(tempSensorOxygen));
+
+  delay(1000);
 
   // OFFSET
   readHumi = readHumi + dHumiOffset.toFloat();
@@ -292,8 +333,10 @@ void loop()
     readHumi = dHumi.toFloat();
   }
 
+
   // Button
   int button1Val = digitalRead(button1);
+  int button2Val = digitalRead(button2);
 
   // Screen - Main
   if (currentScreen == 0)
@@ -321,8 +364,17 @@ void loop()
 
     // Button
     {
-      // Left Button
+      // up
       if (!button1Val)
+      {
+        timerDelayDisplay = millis();
+        timerButton1 = millis();
+        currentScreen = 1;
+        return;
+      }
+
+      // down
+      if (!button2Val)
       {
         timerDelayDisplay = millis();
         timerButton1 = millis();
@@ -355,7 +407,7 @@ void loop()
 
     // Button
     {
-      // Left Button
+      // Up Button
       if (!button1Val)
       {
         if ((millis() - timerButton1) > debouncer025)
@@ -380,8 +432,46 @@ void loop()
     }
   }
 
-  // Solenoid
+  // Sensor - Oxygen
   {
+    // turn on
+    if ((millis() - timerSensorOxygen) > debouncer60)
+    {
+      //
+      timerSensorOxygen = millis();
+      timerSensorOxygenOff = millis();
+
+      //
+      tempSensorOxygen = 0;
+      isSensorOxygenReading = true;
+      digitalWrite(pinOxygen, HIGH);
+
+      //
+      return;
+    }
+
+    // turn off
+    if (isSensorOxygenReading)
+    {
+      //
+      if ((millis() - timerSensorOxygenOff) > debouncer15)
+      {
+        //
+        timerSensorOxygenOff = millis();
+
+        //
+        isSensorOxygenReading = false;
+        digitalWrite(pinOxygen, LOW);
+
+        //
+        return;
+      }
+    }
+  }
+
+  // Relay - Solenoid
+  {
+    /*
     // Active Saving
     if (readHumi <= dHumiTrigger.toFloat() - 5)
     {
@@ -395,10 +485,12 @@ void loop()
       dTriggered = "1";
       digitalWrite(pinSolenoid, HIGH);
     }
+    */
   }
 
   // Wifi Reconnect
   {
+    /*
     if ((millis() - timerWifi) > debouncer60)
     {
       timerWifi = millis();
@@ -414,6 +506,7 @@ void loop()
         isWifiConnected = false;
       }
     }
+    */
   }
 
   // Web
