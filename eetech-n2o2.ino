@@ -41,8 +41,11 @@ float tempSensorOxygen = 0;
 bool isSensorOxygenReading = false;
 
 // O2
-String dOxygen = "0";
+String dOxygen = "20";
 int oxygenPin = A0;
+
+// N2
+bool isN2On = false;
 
 // Input
 int button1 = D6;                                 // up
@@ -291,48 +294,111 @@ void loop()
   // Temp
   float readTemp = 0; //dht.readTemperature();
   float readHumi = 0; //dht.readHumidity();
-
-  // O2
-  unsigned long readOxygen = analogRead(A0); 
-  if (isSensorOxygenReading)
   {
-    //
-    if (tempSensorOxygen < readOxygen)
+    // OK?
+    if (readHumi < 100)
     {
-      tempSensorOxygen = readOxygen;
+      dTemp = ConvertNumber(readTemp);
+      dHumi = ConvertNumber(readHumi);
+    }
+    else
+    {
+      readTemp = dTemp.toFloat();
+      readHumi = dHumi.toFloat();
     }
 
-    //float readOxygen = analogRead(A0); 
-    //readOxygen = readOxygen / 1023.0;
-    //Serial.println("read: " + String(readOxygen) + " tempo:" + String(tempSensorOxygen));
+    // OFFSET
+    readHumi = readHumi + dHumiOffset.toFloat();
+
+    // Active Saving
+    if (readHumi < dHumiTrigger.toFloat())
+    {
+      //isN2On = false;
+    }
+
+    // Active N2
+    if (readHumi >= dHumiTrigger.toFloat())
+    {
+      //isN2On = true;
+    }
   }
-  else
+
+  // Oxygen
+  unsigned long readOxygen = analogRead(A0); 
+  unsigned long kamote = readOxygen;
   {
+    // max?
+    if (readOxygen > 220)
+    {
+      readOxygen = 220;
+    }
+
+    if (readOxygen <= 0)
+    {
+      readOxygen = 0;
+    }
     
+    //
+    if (isSensorOxygenReading)
+    {
+      //
+      if (tempSensorOxygen < readOxygen)
+      {
+        tempSensorOxygen = readOxygen;
+      }
+    }
+
+    // turn on
+    if ((millis() - timerSensorOxygen) > debouncer60)
+    {
+      //
+      timerSensorOxygen = millis();
+      timerSensorOxygenOff = millis();
+
+      //
+      tempSensorOxygen = 0;
+      isSensorOxygenReading = true;
+      digitalWrite(pinOxygen, HIGH);
+
+      //
+      return;
+    }
+
+    // turn off
+    if (isSensorOxygenReading)
+    {
+      //
+      if ((millis() - timerSensorOxygenOff) > debouncer15)
+      {
+        //
+        timerSensorOxygenOff = millis();
+
+        //
+        isSensorOxygenReading = false;
+        digitalWrite(pinOxygen, LOW);
+
+        //
+        return;
+      }
+    }
+      
+    // convert (20 min = 0 / 5 min = 220)
+    float readOxygenPercent = tempSensorOxygen / 220;
+    readOxygen = (int)((15 - (15 * readOxygenPercent)) + 5);
+    dOxygen = ConvertNumber21(readOxygen);
+
+    // Active Saving
+    if (readOxygen <= 6)
+    {
+      isN2On = false;
+    }
+
+    // Active N2
+    if (readOxygen >= 7)
+    {
+      isN2On = true;
+    }
   }
-
-  lcd.setCursor(0, 0);
-  lcd.print(String(readOxygen));
-  lcd.setCursor(0, 1);
-  lcd.print(String(tempSensorOxygen));
-
-  delay(1000);
-
-  // OFFSET
-  readHumi = readHumi + dHumiOffset.toFloat();
-
-  // OK?
-  if (readHumi < 100)
-  {
-    dTemp = ConvertNumber(readTemp);
-    dHumi = ConvertNumber(readHumi);
-  }
-  else
-  {
-    readTemp = dTemp.toFloat();
-    readHumi = dHumi.toFloat();
-  }
-
 
   // Button
   int button1Val = digitalRead(button1);
@@ -344,26 +410,27 @@ void loop()
     // LCD
     {
       // Active Saving
-      if (readHumi < dHumiTrigger.toFloat())
+      if (!isN2On)
       {
         lcd.setCursor(0, 0);
-        lcd.print("N2:OFF SR:" + ConvertNumber(dHumiTrigger.toFloat()) + "%");
+        lcd.print("N2: OFF      " + String(kamote));
         lcd.setCursor(0, 1);
-        lcd.print("TH:" + ConvertNumber3(int((dTotalOff / 60) / 60)) + " CR:" + dHumi + "%");
+        lcd.print("TH: " + ConvertNumber3(int((dTotalOff / 60) / 60)) + "  o2: " + dOxygen + "%");
       }
 
       // Active N2
-      if (readHumi >= dHumiTrigger.toFloat())
+      if (isN2On)
       {
         lcd.setCursor(0, 0);
-        lcd.print("N2:ON  SR:" + ConvertNumber(dHumiTrigger.toFloat()) + "%");
+        lcd.print("N2:  ON      " + String(kamote));
         lcd.setCursor(0, 1);
-        lcd.print("TH:" + ConvertNumber3(int((dTotalOff / 60) / 60)) + " CR:" + dHumi + "%");
+        lcd.print("TH: " + ConvertNumber3(int((dTotalOff / 60) / 60)) + "  o2: " + dOxygen + "%");
       }
     }
 
     // Button
     {
+      /*
       // up
       if (!button1Val)
       {
@@ -381,6 +448,7 @@ void loop()
         currentScreen = 1;
         return;
       }
+      */
     }
   }
 
@@ -432,60 +500,24 @@ void loop()
     }
   }
 
-  // Sensor - Oxygen
-  {
-    // turn on
-    if ((millis() - timerSensorOxygen) > debouncer60)
-    {
-      //
-      timerSensorOxygen = millis();
-      timerSensorOxygenOff = millis();
-
-      //
-      tempSensorOxygen = 0;
-      isSensorOxygenReading = true;
-      digitalWrite(pinOxygen, HIGH);
-
-      //
-      return;
-    }
-
-    // turn off
-    if (isSensorOxygenReading)
-    {
-      //
-      if ((millis() - timerSensorOxygenOff) > debouncer15)
-      {
-        //
-        timerSensorOxygenOff = millis();
-
-        //
-        isSensorOxygenReading = false;
-        digitalWrite(pinOxygen, LOW);
-
-        //
-        return;
-      }
-    }
-  }
-
   // Relay - Solenoid
   {
-    /*
-    // Active Saving
-    if (readHumi <= dHumiTrigger.toFloat() - 5)
+    if (!isSensorOxygenReading)
     {
-      dTriggered = "0";
-      digitalWrite(pinSolenoid, LOW);
+      // Active Saving
+      if (!isN2On)
+      {
+        dTriggered = "0";
+        digitalWrite(pinSolenoid, LOW);
+      }
+  
+      // Active N2
+      if (isN2On)
+      {
+        dTriggered = "1";
+        digitalWrite(pinSolenoid, HIGH);
+      }  
     }
-
-    // Active N2
-    if (readHumi >= dHumiTrigger.toFloat())
-    {
-      dTriggered = "1";
-      digitalWrite(pinSolenoid, HIGH);
-    }
-    */
   }
 
   // Wifi Reconnect
@@ -539,7 +571,7 @@ void loop()
 
       // Saving
       {
-        if (readHumi < dHumiTrigger.toFloat())
+        if (!isN2On)
         {
           dTotalOff = dTotalOff + 1;
 
@@ -813,9 +845,8 @@ void WriteHumiTrigger() {
   }
 }
 
-String ConvertNumber(float x) {
-  // result will be 00.00
-
+String ConvertNumber(float x) { // result will be 00.00
+  
   x = round(x * 100.0) / 100.0;
   String newx = String(x);
 
@@ -827,6 +858,24 @@ String ConvertNumber(float x) {
   if (x <= 0)
   {
     newx = "00.00";
+  }
+
+  return newx;
+}
+
+String ConvertNumber21(int x) { // result will be 00
+  
+  
+  String newx = String(x);
+
+  if (x < 10)
+  {
+    newx = "0" + newx;
+  }
+
+  if (x <= 0)
+  {
+    newx = "00";
   }
 
   return newx;
